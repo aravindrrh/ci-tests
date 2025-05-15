@@ -52,7 +52,7 @@ ssh-keygen -b 2048 -t rsa -f ~/.ssh/id_rsa -q -N ""
 cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
 chmod og-wx ~/.ssh/authorized_keys
 
-yum -y install kernel-devel-$(uname -r) kernel-headers-$(uname -r) cpp gcc gcc-c++ binutils numactl jre make elfutils elfutils-devel rpcbind sssd-tools openldap-clients bind-utils net-tools krb5-workstation python3.12 --skip-broken
+yum -y install kernel-devel-$(uname -r) kernel-headers-$(uname -r) cpp gcc gcc-c++ binutils numactl jre make elfutils elfutils-devel rpcbind sssd-tools openldap-clients bind-utils net-tools krb5-workstation python3 --skip-broken
 python3 -m pip install --user ansible
 
 #Add CES IP to /etc/hosts
@@ -115,7 +115,7 @@ then
 	yum-config-manager --add-repo=${YUM_REPO}
 
 	# install the latest version of gluster
-	dnf -y install gpfs.nfs-ganesha nfs-ganesha-gluster glusterfs-ganesha
+	dnf -y install nfs-ganesha nfs-ganesha-gluster glusterfs-ganesha
 
 	# start nfs-ganesha service
 	if ! systemctl start nfs-ganesha
@@ -130,69 +130,67 @@ else
 #	[ -n "${GERRIT_HOST}" ]
 #	[ -n "${GERRIT_PROJECT}" ]
 #	[ -n "${GERRIT_REFSPEC}" ]
-	GERRIT_HOST="github.com"
-	GERRIT_PROJECT="nfs-ganesha/nfs-ganesha"
-  GERRIT_REFSPEC="refs/heads/next"
- #https://review.gerrithub.io/c/ffilz/nfs-ganesha/+/1225224
-#  GERRIT_HOST="review.gerrithub.io"
+#	GERRIT_HOST="review.gerrithub.io"
 #	GERRIT_PROJECT="ffilz/nfs-ganesha"
-#  GERRIT_REFSPEC="refs/changes/24/1225224/1"
-	GIT_REPO=$(basename "${GERRIT_PROJECT}")
-	GIT_URL="https://${GERRIT_HOST}/${GERRIT_PROJECT}"
-
+#  GERRIT_REFSPEC="refs/heads/next"
+#	GIT_REPO=$(basename "${GERRIT_PROJECT}")
+#	GIT_URL="https://${GERRIT_HOST}/${GERRIT_PROJECT}"
+#
   BASE_PACKAGES="git bison flex cmake gcc-c++ libacl-devel krb5-devel dbus-devel rpm-build redhat-rpm-config gdb"
   BUILDREQUIRES_EXTRA="libnsl2-devel libnfsidmap-devel libwbclient-devel userspace-rcu-devel libcephfs-devel"
 
   dnf install -y ${BASE_PACKAGES} libacl-devel libblkid-devel libcap-devel redhat-rpm-config rpm-build libgfapi-devel xfsprogs-devel --skip-broken
   dnf install --enablerepo=crb -y ${BUILDREQUIRES_EXTRA} --skip-broken
   dnf -y install selinux-policy-devel sqlite --skip-broken
+#
+#	git init "${GIT_REPO}"
+#	pushd "${GIT_REPO}"
+#
+#  #Its observed that fetch is failing so this little hack is added! Will delete in future if it turns out useless!
+#	git fetch --depth=1 "${GIT_URL}" "${GERRIT_REFSPEC}" > /dev/null
+#        if [ $? = 0 ]; then
+#            echo "Fetch succeeded"
+#        else
+#            sleep 2
+#            git fetch "${GIT_URL}" "${GERRIT_REFSPEC}"
+#        fi
+#
+#	git checkout -b "${GERRIT_REFSPEC}" FETCH_HEAD
+#
+#	# update libntirpc
+#	git submodule update --recursive --init || git submodule sync
+#
+#	mkdir build
+#	pushd build
+#
+#	cmake -DCMAKE_BUILD_TYPE=Maintainer -DUSE_FSAL_GPFS=ON -DUSE_DBUS=ON -D_MSPAC_SUPPORT=OFF -DMONITORING=ON -DUSE_MONITORING=ON ../src
+#	# sed -i 's/^ monitoring$/%bcond_without monitoring/g' ../src/nfs-ganesha.spec
+#	make dist
+#	rpmbuild -ta --define "_srcrpmdir $PWD" --define "_rpmdir $PWD" *.tar.gz
+#	rpm_arch=$(rpm -E '%{_arch}')
+#	ganesha_version=$(rpm -q --qf '%{VERSION}-%{RELEASE}' -p *.src.rpm)
+#
+#  cd nfs-ganesha/build
+#	if [ -e ${rpm_arch}/libntirpc-devel*.rpm ]; then
+#		ntirpc_version=$(rpm -q --qf '%{VERSION}-%{RELEASE}' -p ${rpm_arch}/libntirpc-devel*.rpm)
+#		ntirpc_rpm=${rpm_arch}/libntirpc-${ntirpc_version}.${rpm_arch}.rpm
+#	fi
+#
+#  rpm -e gpfs.nfs-ganesha gpfs.nfs-ganesha-gpfs --nodeps
+#	dnf -y install {x86_64,noarch}/*.rpm
+  YUM_REPO="http://magna002.ceph.redhat.com/ceph-qe-logs/scale"
+  wget -r -l1 -H -t1 -nd -N -np -A.rpm -erobots=off $YUM_REPO
+  dnf -y install gpfs.nfs-ganesha-*.el9.x86_64.rpm gpfs.nfs-ganesha-utils-*.el9.x86_64.rpm gpfs.nfs-ganesha-gpfs-*.el9.x86_64.rpm
 
-	git init "${GIT_REPO}"
-	pushd "${GIT_REPO}"
-
-  # Its observed that fetch is failing so this little hack is added! Will delete in future if it turns out useless!
-	git fetch --depth=1 "${GIT_URL}" "${GERRIT_REFSPEC}" > /dev/null
-        if [ $? = 0 ]; then
-            echo "Fetch succeeded"
-        else
-            sleep 2
-            git fetch "${GIT_URL}" "${GERRIT_REFSPEC}"
-        fi
-  #   git fetch --depth=1 https://review.gerrithub.io/ffilz/nfs-ganesha refs/changes/24/1225224/1 && git cherry-pick FETCH_HEAD
-	git checkout -b "${GERRIT_REFSPEC}" FETCH_HEAD
-
-	# update libntirpc
-	git submodule update --recursive --init || git submodule sync
-
-	mkdir build
-	pushd build
-
-  #
-  /usr/lpp/mmfs/bin/mmces service disable nfs --force
-
-	cmake -DCMAKE_BUILD_TYPE=Maintainer -DUSE_FSAL_GPFS=ON -DUSE_DBUS=ON -D_MSPAC_SUPPORT=OFF -DMONITORING=ON -DUSE_MONITORING=ON ../src
-	# sed -i 's/^ monitoring$/%bcond_without monitoring/g' ../src/nfs-ganesha.spec
-	make dist
-	rpmbuild -ta --define "_srcrpmdir $PWD" --define "_rpmdir $PWD" *.tar.gz
-	rpm_arch=$(rpm -E '%{_arch}')
-	ganesha_version=$(rpm -q --qf '%{VERSION}-%{RELEASE}' -p *.src.rpm)
-
-  cd nfs-ganesha/build
-	if [ -e ${rpm_arch}/libntirpc-devel*.rpm ]; then
-		ntirpc_version=$(rpm -q --qf '%{VERSION}-%{RELEASE}' -p ${rpm_arch}/libntirpc-devel*.rpm)
-		ntirpc_rpm=${rpm_arch}/libntirpc-${ntirpc_version}.${rpm_arch}.rpm
-	fi
-
-  rpm -e gpfs.nfs-ganesha gpfs.nfs-ganesha-gpfs --nodeps
-	dnf -y install {x86_64,noarch}/*.rpm
+  #dnf -y install gpfs.nfs-ganesha*
 
 	# Test block
 	ulimit -a
 	ulimit -c unlimited
 	ulimit -a
 
-#	# start nfs-ganesha service with an empty configuration
-#  echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganesha/ganesha.conf
+	# start nfs-ganesha service with an empty configuration
+	echo "NFSv4 { Graceless = true; }" > /etc/ganesha/ganesha.conf
 
 	# This block is introduced as the line creates a ambiguity as the same is used in scale implementation
 	systemctl stop nfs-ganesha
@@ -208,19 +206,14 @@ else
 		exit 1
 	fi
 fi
-----------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------
 
 
 #EXPORT THE NFS VOLUME
 #----------------------------------------------------------------------------------------------
-
-# This is added to write the ganesha.conf required for gpfs
-/usr/lpp/mmfs/bin/mmces service enable nfs
-
-# start nfs-ganesha service with an empty configuration (Moving it here from above)
-echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganesha/ganesha.conf
 /usr/lpp/mmfs/bin/mmuserauth service create --data-access-method file --type userdefined
 /usr/lpp/mmfs/bin/mmnfs export add /ibm/${STORAGE_SCALE_VOLUME} -c "*(Access_Type=RW,Squash=none)"
+
 #CHECKS TO SEE IF THE VOLUME IS WORKING
 #----------------------------------------------------------------------------------------------
 
