@@ -195,7 +195,8 @@ else
 #  echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganesha/ganesha.conf
 
 	# This block is introduced as the line creates a ambiguity as the same is used in scale implementation
-	systemctl stop nfs-ganesha
+	# systemctl stop nfs-ganesha
+
 	sed -i.bak -e 's/^StateDirectory/#&/' /usr/lib/systemd/system/nfs-ganesha.service
 	systemctl daemon-reload
 
@@ -208,9 +209,7 @@ else
 		exit 1
 	fi
 fi
-----------------------------------------------------------------------------------------------
-
-
+#----------------------------------------------------------------------------------------------
 #EXPORT THE NFS VOLUME
 #----------------------------------------------------------------------------------------------
 
@@ -227,9 +226,12 @@ echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganes
 #There's a duplicate line in the file - /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf which fails to restart
 systemctl stop nfs-ganesha
 /usr/lpp/mmfs/bin/mmnfs config change MINOR_VERSIONS=0,1
-sleep 20
+/usr/lpp/mmfs/bin/mmnfs config change ENFORCE_UTF8_VALIDATION=true
+
+sleep 30
 sed -i.bak -e '41d' /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf
-sleep 5
+
+sleep 15
 systemctl daemon-reload
 if ! systemctl start nfs-ganesha
 then
@@ -239,5 +241,5 @@ then
     journalctl -xe
     exit 1
 fi
-
+sleep 120
 systemctl status nfs-ganesha
