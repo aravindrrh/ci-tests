@@ -225,7 +225,7 @@ echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganes
 
 #There's a duplicate line in the file - /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf which fails to restart
 systemctl stop nfs-ganesha
-/usr/lpp/mmfs/bin/mmnfs config change MINOR_VERSIONS=0,1
+/usr/lpp/mmfs/bin/mmnfs config change MINOR_VERSIONS=0,1,2
 /usr/lpp/mmfs/bin/mmnfs config change ENFORCE_UTF8_VALIDATION=true
 
 sleep 30
