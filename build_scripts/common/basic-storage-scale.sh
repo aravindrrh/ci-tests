@@ -227,6 +227,8 @@ echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganes
 systemctl stop nfs-ganesha
 /usr/lpp/mmfs/bin/mmnfs config change MINOR_VERSIONS=0,1,2
 /usr/lpp/mmfs/bin/mmnfs config change ENFORCE_UTF8_VALIDATION=true
+# Set ACLs to nfs4_acls
+/usr/lpp/mmfs/bin/mmchfs /ibm/${STORAGE_SCALE_VOLUME} -k nfs4
 
 sleep 30
 sed -i.bak -e '41d' /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf
