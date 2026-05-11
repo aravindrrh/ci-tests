@@ -164,6 +164,11 @@ else
 	# update libntirpc
 	git submodule update --recursive --init || git submodule sync
 
+	# NFS-Ganesha ACL fix for non-root users (setfsgid/setfsuid vs setresgid/setresuid)
+	SCALE_ACL_PATCH_DIR="/root/ci-tests/build_scripts/common"
+	git apply "${SCALE_ACL_PATCH_DIR}/scale_acl_fix.patch" \
+		|| { echo "Failed to apply ${SCALE_ACL_PATCH_DIR}/scale_acl_fix.patch"; exit 1; }
+
 	mkdir build
 	pushd build
 

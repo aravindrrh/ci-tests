@@ -1,0 +1,134 @@
+From 229091ee8947a308faa0f957cfab90ab1a33e586 Mon Sep 17 00:00:00 2001
+From: Madhu Thorat <madhu.punjabi@in.ibm.com>
+Date: Wed, 10 Apr 2019 02:00:45 -0400
+Subject: [PATCH] IBM-only: Use setfsgid/setfsuid instead of
+ setresgid/setresuid
+
+2.7 code uses setresgid()/setresuid() to change effective gid/uid.
+But this is not working as of now as uid is not changing with
+setresuid().
+Temporary fix: Use setfsgid()/setfsuid() instead of setresgid/setresuid()
+in the way it is used in 2.5. Will revert it when we have a fix to
+use setresuid() to change uid.
+
+Change-Id: Icff0a50e168a02487885273e2c59f303d4634ae3
+Signed-off-by: Madhu Thorat <madhu.punjabi@in.ibm.com>
+(cherry picked from commit 41749b2e5ad50d1e5f94366ae61809f180e849d6)
+---
+ src/FSAL/access_check.c |  6 ++++--
+ src/include/os/subr.h   |  4 ++--
+ src/os/freebsd/subr.c   | 20 ++++++++++++--------
+ src/os/linux/subr.c     | 23 +++++++++++++----------
+ 4 files changed, 31 insertions(+), 22 deletions(-)
+
+diff --git a/src/FSAL/access_check.c b/src/FSAL/access_check.c
+index 5324581474..fdd29e20c3 100644
+--- a/src/FSAL/access_check.c
++++ b/src/FSAL/access_check.c
+@@ -896,8 +896,10 @@ void fsal_save_ganesha_credentials(void)
+ 	char buffer[1024];
+ 	struct display_buffer dspbuf = { sizeof(buffer), buffer, buffer };
+ 
+-	ganesha_uid = getuser();
+-	ganesha_gid = getgroup();
++	ganesha_uid = setuser(0);
++	setuser(ganesha_uid);
++	ganesha_gid = setgroup(0);
++	setgroup(ganesha_gid);
+ 
+ 	ganesha_ngroups = getgroups(0, NULL);
+ 	if (ganesha_ngroups > 0) {
+diff --git a/src/include/os/subr.h b/src/include/os/subr.h
+index dcfa315734..a3593cc715 100644
+--- a/src/include/os/subr.h
++++ b/src/include/os/subr.h
+@@ -53,8 +53,8 @@ struct vfs_dirent {
+ 
+ int vfs_readents(int fd, char *buf, unsigned int bcount, off_t *basepp);
+ bool to_vfs_dirent(char *buf, int bpos, struct vfs_dirent *vd, off_t base);
+-void setuser(uid_t uid);
+-void setgroup(gid_t gid);
++uid_t setuser(uid_t uid);
++gid_t setgroup(gid_t gid);
+ int set_threadgroups(size_t size, const gid_t *list);
+ 
+ /* Define these aliases for all OSs for consistency with setuser/setgroup */
+diff --git a/src/os/freebsd/subr.c b/src/os/freebsd/subr.c
+index b2e5ac1c57..447c24a05f 100644
+--- a/src/os/freebsd/subr.c
++++ b/src/os/freebsd/subr.c
+@@ -202,22 +202,26 @@ static int setthreadgroups(size_t size, const gid_t *list)
+ 	return syscall(syscall_num, size, list);
+ }
+ 
+-void setuser(uid_t uid)
++uid_t setuser(uid_t uid)
+ {
+-	int rc = setthreaduid(uid);
++	int rc = 0;
++	uid_t orig_uid = syscall(SYS_getuid);
+ 
++	rc = syscall(SYS_seteuid, uid);
+ 	if (rc != 0)
+-		LogCrit(COMPONENT_FSAL, "Could not set user identity %s (%d)",
+-			strerror(errno), errno);
++		LogCrit(COMPONENT_FSAL, "Could not set user identity");
++	return orig_uid;
+ }
+ 
+-void setgroup(gid_t gid)
++gid_t setgroup(gid_t gid)
+ {
+-	int rc = setthreadgid(gid);
++	int rc = 0;
++	gid_t orig_gid = syscall(SYS_getgid);
+ 
++	rc = syscall(SYS_setegid, gid);
+ 	if (rc != 0)
+-		LogCrit(COMPONENT_FSAL, "Could not set group identity %s (%d)",
+-			strerror(errno), errno);
++		LogCrit(COMPONENT_FSAL, "Could not set group identity");
++	return orig_gid;
+ }
+ 
+ int set_threadgroups(size_t size, const gid_t *list)
+diff --git a/src/os/linux/subr.c b/src/os/linux/subr.c
+index ffffeb413e..85d3276eac 100644
+--- a/src/os/linux/subr.c
++++ b/src/os/linux/subr.c
+@@ -107,22 +107,25 @@ int vfs_utimes(int fd, const struct timespec *ts)
+ 	return futimens(fd, ts);
+ }
+ 
+-void setuser(uid_t uid)
++uid_t setuser(uid_t uid)
+ {
+-	int rc = syscall(SYS_setresuid, -1, uid, -1);
++	uid_t orig_uid = setfsuid(uid);
+ 
+-	if (rc != 0)
+-		LogCrit(COMPONENT_FSAL, "Could not set user identity %s (%d)",
+-			strerror(errno), errno);
++	if (uid != setfsuid(uid))
++		LogCrit(COMPONENT_FSAL, "Could not set user identity");
++
++	return orig_uid;
+ }
+ 
+-void setgroup(gid_t gid)
++gid_t setgroup(gid_t gid)
+ {
+-	int rc = syscall(SYS_setresgid, -1, gid, -1);
++	gid_t orig_gid = setfsgid(gid);
++
++	if (gid != setfsgid(gid))
++		LogCrit(COMPONENT_FSAL, "Could not set group identity");
++
++	return orig_gid;
+ 
+-	if (rc != 0)
+-		LogCrit(COMPONENT_FSAL, "Could not set group identity %s (%d)",
+-			strerror(errno), errno);
+ }
+ 
+ int set_threadgroups(size_t size, const gid_t *list)
