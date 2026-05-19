@@ -21,6 +21,15 @@
 
 set -x
 
+# Accept either lowercase or uppercase env vars for secondary nodes.
+NODE2="${NODE2:-${node2:-}}"
+NODE3="${NODE3:-${node3:-}}"
+
+if [ -z "${NODE2}" ] || [ -z "${NODE3}" ]; then
+    echo "Both NODE2 (or node2) and NODE3 (or node3) must be set."
+    exit 1
+fi
+
 #THE FOLLOWING LINES OF CODE DOWNLOADS STORAGE SCALE, INSTALLS IT AND CREATES A CLUSTER
 #----------------------------------------------------------------------------------------------
 WORKSPACE_PATH=$(pwd)
@@ -41,6 +50,7 @@ aws s3api get-object --bucket centos-ci --key "version_to_use.txt" "version_to_u
 VERSION_TO_USE=$(cat version_to_use.txt)
 echo ${VERSION_TO_USE}
 aws s3api get-object --bucket centos-ci --key "${VERSION_TO_USE}" "${VERSION_TO_USE}"
+STORAGE_SCALE_VOLUME="scale_volume"
 mkdir "$WORKING_DIR/INSTALL_PATH"
 unzip ${VERSION_TO_USE} -d INSTALLER_PATH/
 
@@ -50,7 +60,7 @@ cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
 chmod og-wx ~/.ssh/authorized_keys
 
 yum -y install kernel-devel-$(uname -r) kernel-headers-$(uname -r) cpp gcc gcc-c++ binutils numactl jre make elfutils elfutils-devel rpcbind sssd-tools openldap-clients bind-utils net-tools krb5-workstation python3.12 --skip-broken
-python3 -m pip install --user ansible
+dnf -y install python3-pip --skip-broken || true
 
 #Add CES IP to /etc/hosts
 ip_address=$(/sbin/ip -o -4 addr list eth0 | awk '{print $4}' | cut -d/ -f1)
@@ -66,19 +76,17 @@ $INSTALLER --silent
 
 export PATH="$PATH:$(readlink -f /usr/lpp/mmfs/*/ansible-toolkit/)"
 
-spectrumscale setup -s 127.0.0.1 --storesecret;
-spectrumscale node add $(hostname) -a -n -p;
-spectrumscale node add $(node2)  -n -p;
-spectrumscale node add $(node3)  -n -p;
+spectrumscale setup -s $(hostname -i) --storesecret;
+spectrumscale node add $(hostname) -n;
+spectrumscale node add $(hostname) -p;
 spectrumscale config protocols -e $USABLE_IP;
 spectrumscale node add -a $(hostname);
 spectrumscale config gpfs -c $(hostname)_cluster;
+
+spectrumscale node add ${NODE2} -n;
+spectrumscale node add ${NODE3} -n;
 dd if=/dev/zero of=/home/nsd1_c84f2u09-rhel88a1 bs=1M count=8192;
-dd if=/dev/zero of=/home/nsd1_c84f2u09-rhel88a2 bs=1M count=8192;
-dd if=/dev/zero of=/home/nsd1_c84f2u09-rhel88a3 bs=1M count=8192;
 spectrumscale nsd add -p $(hostname) -u dataAndMetadata -fs ${STORAGE_SCALE_VOLUME} -fg 1 /home/nsd1_c84f2u09-rhel88a1;
-# spectrumscale nsd add -p $(node2) -u dataAndMetadata -fs ${STORAGE_SCALE_VOLUME} -fg 1 /home/nsd1_c84f2u09-rhel88a2;
-# spectrumscale nsd add -p $(node3) -u dataAndMetadata -fs ${STORAGE_SCALE_VOLUME} -fg 1 /home/nsd1_c84f2u09-rhel88a3;
 spectrumscale config protocols -f ${STORAGE_SCALE_VOLUME} -m /ibm/${STORAGE_SCALE_VOLUME};
 spectrumscale enable nfs;
 spectrumscale enable smb;
@@ -211,16 +219,22 @@ fi
 #----------------------------------------------------------------------------------------------
 #EXPORT THE NFS VOLUME
 #----------------------------------------------------------------------------------------------
+# This is added to write the ganesha.conf required for gpfs
+/usr/lpp/mmfs/bin/mmces service enable nfs
+
+# start nfs-ganesha service with an empty configuration (Moving it here from above)
+echo "NFSv4 { Graceless = true; Enforce_utf8_validation = True; }" >> /etc/ganesha/ganesha.conf
 /usr/lpp/mmfs/bin/mmuserauth service create --data-access-method file --type userdefined
 /usr/lpp/mmfs/bin/mmnfs export add /ibm/${STORAGE_SCALE_VOLUME} -c "*(Access_Type=RW,Squash=none)"
-
 #CHECKS TO SEE IF THE VOLUME IS WORKING
 #----------------------------------------------------------------------------------------------
 
 #There's a duplicate line in the file - /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf which fails to restart
 systemctl stop nfs-ganesha
-/usr/lpp/mmfs/bin/mmnfs config change MINOR_VERSIONS=0,1
+/usr/lpp/mmfs/bin/mmnfs config change MINOR_VERSIONS=0,1,2
 /usr/lpp/mmfs/bin/mmnfs config change ENFORCE_UTF8_VALIDATION=true
+# Set ACLs to nfs4_acls
+/usr/lpp/mmfs/bin/mmchfs /ibm/${STORAGE_SCALE_VOLUME} -k nfs4
 
 sleep 30
 sed -i.bak -e '41d' /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf
@@ -234,5 +248,8 @@ then
     journalctl -xe
     exit 1
 fi
+sleep 120
+systemctl status nfs-ganesha
+
 sleep 120
 systemctl status nfs-ganesha
