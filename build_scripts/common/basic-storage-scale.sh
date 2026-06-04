@@ -56,7 +56,7 @@ yum -y install kernel-devel-$(uname -r) kernel-headers-$(uname -r) cpp gcc gcc-c
 python3 -m pip install --user ansible
 
 #Add CES IP to /etc/hosts
-ip_address=$(/sbin/ip -o -4 addr list eth0 | awk '{print $4}' | cut -d/ -f1)
+ip_address=$(ip -4 addr show "$(ip route get 1.1.1.1 | awk '{print $5; exit}')" | awk '/inet / {print $2}' | cut -d/ -f1)
 
 for new_ip in $(echo $ip_address | awk -F '.' '{for(i=$4+1;i<=255;i++){print $1"."$2"."$3"."i}}'); do ping -c 2 $new_ip; if [ "$?" == "1" ]; then USABLE_IP=$new_ip; break; fi; done
 
