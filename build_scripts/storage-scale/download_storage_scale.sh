@@ -30,7 +30,7 @@ cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
 chmod og-wx ~/.ssh/authorized_keys
 
 dnf -y install kernel-devel cpp gcc gcc-c++ binutils numactl jre make elfutils elfutils-devel rpcbind sssd-tools openldap-clients bind-utils net-tools krb5-workstation python3
-python3 -m pip install --user ansible
+python3 -m pip install --user 'ansible-core>=2.14,<2.19'
 dnf install -y kernel-devel-4.18.0-499.el8.x86_64 kernel-headers-4.18.0-499.el8.x86_64
 
 # Add CES IP to /etc/hosts

@@ -54,7 +54,7 @@ chmod og-wx ~/.ssh/authorized_keys
 
 yum -y install kernel-devel-$(uname -r) kernel-headers-$(uname -r) cpp gcc gcc-c++ binutils numactl jre make elfutils elfutils-devel rpcbind sssd-tools openldap-clients bind-utils net-tools krb5-workstation python3.12 --skip-broken
 dnf -y install python3-pip --skip-broken || true
-python3 -m pip install --user ansible
+python3 -m pip install --user 'ansible-core>=2.14,<2.19'
 
 #Add CES IP to /etc/hosts
 ip_address=$(ip -4 addr show "$(ip route get 1.1.1.1 | awk '{print $5; exit}')" | awk '/inet / {print $2}' | cut -d/ -f1)
