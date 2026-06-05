@@ -69,10 +69,57 @@ chmod +x $INSTALLER
 $INSTALLER --silent
 #
 export PATH="$PATH:$(readlink -f /usr/lpp/mmfs/*/ansible-toolkit/)"
+
+# #region agent log
+_agent_scale_log() {
+	_loc="$1"; _msg="$2"; _data="$3"; _hyp="$4"
+	_ts=$(date +%s 2>/dev/null || echo 0)
+	_line="{\"sessionId\":\"e6b6a5\",\"timestamp\":${_ts}000,\"location\":\"basic-storage-scale.sh:${_loc}\",\"message\":\"${_msg}\",\"data\":${_data},\"hypothesisId\":\"${_hyp}\",\"runId\":\"pre-fix\"}"
+	echo "AGENT_DEBUG ${_line}" >&2
+	echo "${_line}" >> /tmp/debug-e6b6a5.log 2>/dev/null || true
+}
+
+# mmbuildgpl cannot run when UEFI Secure Boot is enabled; use signed gpfs.gplbin instead.
+_prepare_scale_kernel_modules() {
+	dnf install -y mokutil 2>/dev/null || true
+	_kver=$(uname -r)
+	_sb_state=$(mokutil --sb-state 2>/dev/null || echo "unknown")
+	_agent_scale_log "sb-check" "secure boot state before spectrumscale install" "{\"sb_state\":\"${_sb_state}\",\"kernel\":\"${_kver}\"}" "SB1"
+
+	case "$_sb_state" in
+	*enabled*|*Enabled*)
+		_gplbin=$(find "${WORKING_DIR}/INSTALLER_PATH" -name "gpfs.gplbin-${_kver}*.rpm" 2>/dev/null | head -1)
+		if [ -z "$_gplbin" ]; then
+			for _candidate in $(find "${WORKING_DIR}/INSTALLER_PATH" -name 'gpfs.gplbin-*.rpm' 2>/dev/null); do
+				case "$_candidate" in *"${_kver}"*) _gplbin=$_candidate; break ;; esac
+			done
+		fi
+		_available=$(find "${WORKING_DIR}/INSTALLER_PATH" -name 'gpfs.gplbin-*.rpm' 2>/dev/null | tr '\n' ',' || true)
+		_agent_scale_log "gplbin-search" "signed module rpm search" "{\"gplbin\":\"${_gplbin:-NOTFOUND}\",\"available\":\"${_available}\"}" "SB2"
+		if [ -n "$_gplbin" ]; then
+			dnf install -y "$_gplbin"
+			_agent_scale_log "gplbin-install" "installed signed gpfs.gplbin" "{\"rpm\":\"${_gplbin}\"}" "SB3"
+		else
+			_agent_scale_log "gplbin-missing" "secure boot enabled but no matching gplbin" "{\"kernel\":\"${_kver}\"}" "SB4"
+			echo "ERROR: Secure Boot is enabled; spectrumscale cannot run mmbuildgpl." >&2
+			echo "No gpfs.gplbin for kernel ${_kver} in ${WORKING_DIR}/INSTALLER_PATH." >&2
+			echo "Disable Secure Boot on the CI VM/image, or install a matching gpfs.gplbin from IBM Fix Central." >&2
+			exit 1
+		fi
+		;;
+	*)
+		_agent_scale_log "sb-check" "secure boot off; mmbuildgpl path available" "{\"sb_state\":\"${_sb_state}\"}" "SB5"
+		;;
+	esac
+}
+# #endregion
+
 #
+cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
 spectrumscale setup -s 127.0.0.1 --storesecret;
 spectrumscale node add $(hostname) -n;
 spectrumscale node add $(hostname) -p;
+spectrumscale node add $(hostname) -a;
 spectrumscale config protocols -e $USABLE_IP;
 spectrumscale node add -a $(hostname);
 spectrumscale config gpfs -c $(hostname)_cluster;
@@ -85,6 +132,7 @@ spectrumscale enable smb;
 spectrumscale callhome disable;
 spectrumscale config perfmon -r off;
 spectrumscale node list;
+_prepare_scale_kernel_modules
 spectrumscale install --precheck;
 spectrumscale install;
 spectrumscale deploy --precheck;
@@ -142,11 +190,29 @@ else
 	GIT_URL="https://${GERRIT_HOST}/${GERRIT_PROJECT}"
 
   BASE_PACKAGES="git bison flex cmake gcc-c++ libacl-devel krb5-devel dbus-devel rpm-build redhat-rpm-config gdb"
-  BUILDREQUIRES_EXTRA="libnsl2-devel libnfsidmap-devel libwbclient-devel userspace-rcu-devel libcephfs-devel"
+  BUILDREQUIRES_EXTRA="libnsl2 libnsl2-devel libnfsidmap-devel libwbclient-devel userspace-rcu-devel libcephfs-devel"
+
+  # #region agent log
+  _agent_debug_log() {
+    _loc="$1"; _msg="$2"; _data="$3"; _hyp="$4"
+    _ts=$(date +%s 2>/dev/null || echo 0)
+    _line="{\"sessionId\":\"e6b6a5\",\"timestamp\":${_ts}000,\"location\":\"basic-storage-scale.sh:${_loc}\",\"message\":\"${_msg}\",\"data\":${_data},\"hypothesisId\":\"${_hyp}\",\"runId\":\"pre-fix\"}"
+    echo "AGENT_DEBUG ${_line}" >&2
+    echo "${_line}" >> /tmp/debug-e6b6a5.log 2>/dev/null || true
+  }
+  # #endregion
 
   dnf install -y ${BASE_PACKAGES} libacl-devel libblkid-devel libcap-devel redhat-rpm-config rpm-build libgfapi-devel xfsprogs-devel --skip-broken
+  # ntirpc cmake requires NSL_LIBRARY; install runtime + devel without --skip-broken
+  dnf install -y libnsl2 libnsl2-devel || dnf install --enablerepo=crb -y libnsl2 libnsl2-devel
   dnf install --enablerepo=crb -y ${BUILDREQUIRES_EXTRA} --skip-broken
   dnf -y install selinux-policy-devel sqlite --skip-broken
+
+  # #region agent log
+  _nsl_rpm=$(rpm -q libnsl2 libnsl2-devel 2>&1 || true)
+  _nsl_ld=$(ldconfig -p 2>/dev/null | grep -E 'libnsl\.so' || true)
+  _agent_debug_log "post-dnf-install" "NSL package and library state after dnf" "{\"rpm_query\":\"${_nsl_rpm}\",\"ldconfig_nsl\":\"${_nsl_ld}\"}" "A"
+  # #endregion
 
 	git init "${GIT_REPO}"
 	pushd "${GIT_REPO}"
@@ -175,6 +241,15 @@ else
 
   #
   /usr/lpp/mmfs/bin/mmces service disable nfs --force
+
+  # #region agent log
+  if ! rpm -q libnsl2 libnsl2-devel >/dev/null 2>&1; then
+    _agent_debug_log "pre-cmake" "libnsl2 packages missing before cmake" "{\"rpm_query\":\"$(rpm -q libnsl2 libnsl2-devel 2>&1)\"}" "B"
+    echo "ERROR: libnsl2/libnsl2-devel required for ntirpc cmake (NSL_LIBRARY)" >&2
+    exit 1
+  fi
+  _agent_debug_log "pre-cmake" "libnsl2 packages present before cmake" "{\"rpm_query\":\"$(rpm -q libnsl2 libnsl2-devel 2>&1)\"}" "C"
+  # #endregion
 
 	cmake -DCMAKE_BUILD_TYPE=Maintainer -DUSE_FSAL_GPFS=ON -DUSE_DBUS=ON -D_MSPAC_SUPPORT=OFF -DMONITORING=ON -DUSE_MONITORING=ON ../src
 	# sed -i 's/^ monitoring$/%bcond_without monitoring/g' ../src/nfs-ganesha.spec
