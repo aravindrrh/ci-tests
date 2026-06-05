@@ -53,6 +53,7 @@ cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
 chmod og-wx ~/.ssh/authorized_keys
 
 yum -y install kernel-devel-$(uname -r) kernel-headers-$(uname -r) cpp gcc gcc-c++ binutils numactl jre make elfutils elfutils-devel rpcbind sssd-tools openldap-clients bind-utils net-tools krb5-workstation python3.12 --skip-broken
+dnf -y install python3-pip --skip-broken || true
 python3 -m pip install --user ansible
 
 #Add CES IP to /etc/hosts
