@@ -130,9 +130,9 @@ else
 #	[ -n "${GERRIT_HOST}" ]
 #	[ -n "${GERRIT_PROJECT}" ]
 #	[ -n "${GERRIT_REFSPEC}" ]
-	GERRIT_HOST="github.com"
-	GERRIT_PROJECT="nfs-ganesha/nfs-ganesha"
-  GERRIT_REFSPEC="refs/heads/next"
+	GERRIT_HOST="review.gerrithub.io"
+	GERRIT_PROJECT="ffilz/nfs-ganesha"
+  GERRIT_REFSPEC="refs/changes/19/1239719/1"
  #https://review.gerrithub.io/c/ffilz/nfs-ganesha/+/1225224
 #  GERRIT_HOST="review.gerrithub.io"
 #	GERRIT_PROJECT="ffilz/nfs-ganesha"
