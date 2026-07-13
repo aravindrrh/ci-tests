@@ -238,6 +238,8 @@ systemctl stop nfs-ganesha
 
 sleep 30
 sed -i.bak -e '41d' /var/mmfs/ces/nfs-config/gpfs.ganesha.main.conf
+sed -i 's/ALL = EVENT;/ALL = FULL_DEBUG;/' /var/mmfs/ces/nfs-config/gpfs.ganesha.log.conf
+
 sleep 15
 systemctl daemon-reload
 if ! systemctl start nfs-ganesha
