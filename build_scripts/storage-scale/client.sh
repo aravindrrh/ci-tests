@@ -12,7 +12,7 @@ set -x
 
 # [ -n "${SERVER}" ]
 # [ -n "${EXPORT}" ]
-EXPORT="/ibm/scale_volume"
+EXPORT="/ibm/scale_volume/export1"
 
 # install build and runtime dependencies
 dnf -y install git gcc nfs-utils time make
